@@ -1,6 +1,7 @@
+read("bkzsim.gp");
+
 binsearchLT(f, val, low, high) = {
   my(mp);
-\\  printf("%s, %d, %d\n", val, low, high);
   if(low >= high-1, return(low));
   mp = ceil((low+high)/2);
   if(f(mp) <= val,
@@ -44,16 +45,19 @@ minHybridMITM(N, K, dm) = {
     c = N-3*dm;
     t = hybridMITM(N, K, dm, dm+c) + .5*log2(N);
 }
+addhelp(minHybridMITM,\
+"minHybridMITM(N, K, dm): Calculate cost of performing hybrid attack on"\
+"a message with maximal information leakage via m(1), i.e. m(1) = N-3dm");
 
 
-hermiteRequirement(N,q,L,K) = {
+hybridHermiteRequirement(N,q,L,K) = {
   ld = (N - L)*log2(q);
   ld /= (4*N^2 - 4*N*(K+L) + (K^2 + 2*K*L + L^2));
   ld -= 1/(2*N - (K+L));
   2^ld
 }
-addhelp(hermiteRequirement,\
-"hermiteRequirement(N,q,L,K): "\
+addhelp(hybridHermiteRequirement,\
+"hybridHermiteRequirement(N,q,L,K): "\
 "Root Hermite factor required to prepare an NTRU basis for hybrid "\
 "meet-in-the-middle attack. [L, N-K] is column index range of block "\
 "to be reduced. L should be taken equal to the security parameter");
@@ -68,25 +72,29 @@ deltaStar(k) = {
   \\if(k <= 256, return(1.005),
   \\return(1) ))))));
   return(1.91157e-8*k^2 - 2.32633e-5*k + 1.00972);
+  \\return(9.09036e-8*k^2 - 5.7995*k + 1.01419);
 }
 addhelp(deltaStar, \
 "deltaStar(k): Conjectured root Hermite factor reachable by BKZ "\
-"with 2^k operations");
+"with 2^k operations.");
 
 
-decFail(N, q, d1, d2, d3) = {
-  my(B,sig,Ds,e1,e2);
-  B = (q-2)/6;
-  sig1 = sqrt(16*d1*d2/(3*N^2) + 8*d3/(3*N^3));
-  sig2 = sqrt(2/3 * (4*d1*d2 + 2*d3));
-  e1 = log2(N*erfc(B/(sig*sqrt(2))));
-  e2 = log2(N*erfc(B/(sig*sqrt(2))));
-  [e1, e2];
-}
+\\decFail(N, q, d1, d2, d3) = {
+\\  my(B,sig,Ds,e1,e2);
+\\  B = (q-2)/6;
+\\  sig1 = sqrt(16*d1*d2/(3*N^2) + 8*d3/(3*N^3));
+\\  sig2 = sqrt(2/3 * (4*d1*d2 + 2*d3));
+\\  e1 = log2(N*erfc(B/(sig*sqrt(2))));
+\\  e2 = log2(N*erfc(B/(sig*sqrt(2))));
+\\  [e1, e2];
+\\}
 
 decFailSig(pm, pg, d1,d2,d3) = {
   sig = 3 * sqrt((4*d1*d2 + 2*d3)*pm + (4*d1*d2 + 2*d3)*pg);
 }
+addhelp(decFailSig, \
+"decFailSig(pm,pg,d1,d2,d3): returns expected standard deviation "\
+"of a coefficient of 3*(r*g + m*F) + m.")
 
 numProdForm(N, a, b, c) = {
   my(S);
@@ -101,70 +109,125 @@ blockSize(N, q) = {
 
 bkzCost(dim, bs, iter) = {
   my(logNodes);
-  \\ Quad fit to Full BKZ-2.0 paper table 4
-  \\logNodes = 0.000784314*bs^2 + 0.366078*bs - 6.125;
   \\ Quad fit to published BKZ-2.0 paper table 3 row 1
-  logNodes = 0.00405892*bs^2 - 0.337913*bs + 34.9018;
-  round(logNodes + log2(dim*iter) + 7);
-}
-
-bkzCost2(dim, bs, iter) = {
-  my(logNodes);
-  \\ Quad fit to Full BKZ2.0 paper table 4
-  logNodes = 0.000784314*bs^2 + 0.366078*bs - 6.125;
-  \\ Quad fit to published BKZ2.0 paper table 3 row 1
-  \\logNodes = 0.00405892*bs^2 - 0.337913*bs + 34.9018;
-  round(logNodes + log2(dim*iter) + 7);
+  logNodes1 = 0.00405892*bs^2 - 0.337913*bs + 34.9018;
+  \\ Quad fit to Full BKZ-2.0 paper table 4
+  logNodes2 = 0.000784314*bs^2 + 0.366078*bs - 6.125;
+  [round(logNodes1 + log2(dim*iter) + 7), round(logNodes2 + log2(dim*iter) + 7)];
 }
 
 cn11est(dim, hreq) = {
-  my(bs, iter, logNodes);
-  printf("\n----%d %f\n",dim, hreq);
+  my(bs, iter, cost);
 
   bs = binsearchLT((x)->(-simulate(dim, x, hreq)[2]), -hreq, 60, dim) + 1;
   iter = simulate(dim, bs, hreq)[3];
-
-  [iter, bs, bkzCost(dim, bs, iter)];
+  cost = bkzCost(dim, bs, iter);
+  [iter, bs, cost[1], cost[2]];
 }
 
-genParams(N, lambda, verbose=0) = {
-  my(dm, d1, d2, d3, dg, sig, q, Kh, Kc, dmSec);
+genParams(N, verbose=0) = {
+  my(lambda, directMITM, dm, d1, d2, d3, dg, sig,\
+  q, q2, decFail, decFail2, Kh, Kc, Kb, LL, LM, high, low);
 
   /* Standard choices for dg, d1, d2, and d3 */
   dg = round(N/3);
   d1 = d2 = d3 = ceil(vecmax(real(polroots(2*x^2 + x - N/3))));
-  while((2*d1*(d2-1) + d3) >= round(N/3), d2 -= 1);
-  while((2*d1*d2 + (d3-1)) >= round(N/3) && (d3-1) > (d1/2), d3 -= 1);
-
-  /* Increment d3 until product form search space is sufficiently large */
-  L = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
-  while(L < lambda, d3 += 1; L = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N)));
+  d2 = ceil((N/3 - d1)/(2*d1));
+  d3 = max(ceil((d1 + 1)/2), ceil(N/3 - 2*d1*d2));
+  \\while((2*d1*(d2-1) + d3) >= round(N/3), d2 -= 1);
+  \\while((2*d1*d2 + (d3-1)) >= round(N/3) && (d3-1) > (d1/2), d3 -= 1);
 
   /* Pick initial dm based on rejection probability below 2^-10 */
   dm = binsearchLT((x)->(dmRejectProb(N,x)), -10, 0, floor(N/3));
   mRej = dmRejectProb(N,dm);
 
+  /* Use direct product-form MITM for upper bound on security */
+  directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+
   /* Choose q as smallest power of 2 admitting negligible
      decryption failure probability */
-  sig = decFailSig((1-dm/N), 2/3, d1, d2, d3);
-  q = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), lambda, 2^4, 2^16);
+  sig = decFailSig((1-dm/N), (2*dg + 1)/N, d1, d2, d3);
+  q = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), directMITM, 2^4, 2^16);
   q = 2^ceil(log2(2*q + 2));
   decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
 
-  /* Kh is largest K that can be prepared via lattice reduction */
-  Kh = binsearchLT((x)->(hermiteRequirement(N,q,lambda,x)), deltaStar(lambda), 0, N);
-  /* Kc is smallest K that cannot be searched via meet-in-the-middle technique */
-  Kc = binsearchLT((x)->(hybridMITM(N, x, dg, dg)), lambda, 0, Kh) + 1;
+  /* Kh is smallest K that can be prepared via lattice reduction in O(2^\lambda) time. */
+  [lambda1, K1] = optimalK(N,q,d1,d2,d3,dg,dm,3);
+  [lambda2, K2] = optimalK(N,q,d1,d2,d3,dg,dm,4);
+
+  /* Redo search for q with new security estimate */
+  /* TODO: This favors estimate 1 */
+  q2 = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), lambda1, 2^4, 2^16);
+  q2 = 2^ceil(log2(2*q2 + 2));
+  decFail2 = round(log2(N*erfc(((q2-2)/2)/(sig*sqrt(2)))));
+  if(q2 != q, /* If we can lower q, rederive security */
+    q = q2;
+    decFail = decFail2;
+    [lambda1, K1] = optimalK(N,q,d1,d2,d3,dg,dm,3);
+    [lambda2, K2] = optimalK(N,q,d1,d2,d3,dg,dm,4));
+
+  \\Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,lambda,x)), deltaStar(lambda), 0, N);
+  \\LL = cn11est(2*N - lambda - Kh, hybridHermiteRequirement(N, q, lambda, Kh))[estimate];
+  \\Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,LL,x)), deltaStar(LL), 0, N);
+  \\/* Kc is largest K that can be searched in O(2^(\lambda)) time via meet-in-the-middle technique */
+  \\Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda, 0, N) + 1;
+  \\if(Kc - Kh <= 20,
+  \\  Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda/2, 0, N) + 1);
+  \\LM = floor(hybridMITM(N, Kc, dg+1, dg));
+
+  \\/* Search for a K between Kc and Kh that balances the two costs */
+  \\low = min(Kc, Kh);
+  \\high = max(Kc, Kh);
+  \\Kb = ceil((low + high)/2);
+  \\printf("%d %d | %d %d\n", Kc, LM, Kh, LL);
+  \\while(high-low > 1, /* Binary search for balanced costs */
+  \\  LL = cn11est(2*N - LL - Kb, hybridHermiteRequirement(N, q, LL, Kb))[estimate];
+  \\  LM = floor(hybridMITM(N, Kb, dg+1, dg));
+  \\  if(LL < LM, high = Kb, low = Kb);
+  \\  Kb = ceil((low + high)/2));
+
+  /* Update security estimate. Either keep direct MITM cost or
+   * choose larger of the two costs from hybrid attack (which should
+   * be roughly equal anyway). */
+  \\lambda = min(lambda, max(LM,LL));
 
   if(verbose,
-    checkParams([lambda, N, q, d1, d2, d3, dg, dm, Kc, Kh]));
+    checkParams([N, q, d1, d2, d3, dg, dm, lambda1, K1, lambda2, K2]));
 
-  [lambda, N, q, d1, d2, d3, dg, dm, Kc, Kh]
+  [N, q, d1, d2, d3, dg, dm, lambda1, K1, lambda2, K2, decFail, directMITM]
 }
 
-blahblah(gen) = {
-  [lambda, N, q, d1, d2, d3, dg, dm, Kc] = gen;
-  [N, q, d1, d2, d3, dg, dm, Kc]
+optimalK(N,q,d1,d2,d3,dg,dm,estimate=3) = {
+  my(lambda, Kb, Llr, Lmitm, high, low);
+  lambda = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+
+  Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,lambda,x)), deltaStar(lambda), 0, N);
+  Llr = cn11est(2*N - lambda - Kh, hybridHermiteRequirement(N, q, lambda, Kh))[estimate];
+  Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,Llr,x)), deltaStar(Llr), 0, N);
+
+  /* Kc is largest K that can be searched in O(2^(\lambda)) time via meet-in-the-middle technique */
+  Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda, 0, N) + 1;
+  if(Kc - Kh <= 20, /* Arbitrarily decide if Kh is too large compared to Kc to contain optimal point */
+    Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda/2, 0, N) + 1);
+  Lmitm = floor(hybridMITM(N, Kc, dg+1, dg));
+
+  /* Search for a K between Kc and Kh that balances the two costs */
+  low = min(Kc, Kh);
+  high = max(Kc, Kh);
+  Kb = ceil((low + high)/2);
+  while(high-low > 1, /* Binary search for balanced costs */
+    Llr = cn11est(2*N - Llr - Kb, hybridHermiteRequirement(N, q, Llr, Kb))[estimate];
+    Lmitm = floor(hybridMITM(N, Kb, dg+1, dg));
+    if(Llr < Lmitm, high = Kb, low = Kb);
+    Kb = ceil((low + high)/2));
+
+  Lmsg = floor(minHybridMITM(N, Kb, dm));
+
+  /* Update security estimate. Either keep direct MITM cost or
+   * choose smaller (message or key recovery) of the hybrid attack costs.  */
+  lambda = min(lambda, max(min(Lmitm, Lmsg),Llr));
+
+  [lambda, Kb];
 }
 
 
@@ -202,11 +265,15 @@ addhelp(logBinomialCDF, \
 
 
 formatParams(genoutput) = {
-  my(c, cs, cm, lLen, secOct, mLen, hashLen, minSamp, minRand, err);
-  [lambda, N, q, d1, d2, d3, dg, dm, K] = genoutput;
+  my(lambda, c, cs, cm, lLen, secOct, mLen, hashLen, minSamp, minRand, err);
+  [N, q, d1, d2, d3, dg, dm, lambda1, K1, lambda2, K2] = genoutput;
   c = ceil(log2(N));
   for(cs=c, 13, if(lift(Mod(2^cs, N))/N < lift(Mod(2^c, N))/N, c = cs));
   cm = 2^c - lift(Mod(2^c, N));
+
+  /* Upper bound on security */
+  lambda = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+
   secOct = floor(lambda/8);
   /* max message length (bytes) using 3 bit to 2 trit encoding
      assumes mLen will be < 256, assumes b is secOct bytes */
@@ -253,60 +320,68 @@ printf( \
 d1, d2, d3, dg, mLen, dm, cm, c, minCalls, minMGF);
 }
 
-checkParams(genoutput) = {
-  my(L, sig, decFail, hermite, combSec, dmSec);
-  [lambda, N, q, d1, d2, d3, dg, dm, Kc, Kh] = genoutput;
-
-  L = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
-
-  hMITM = hermiteRequirement(N,q,lambda,Kc);
-  hLR = hermiteRequirement(N,q,lambda,Kh);
-
-  curCombSec = hybridMITM(N, Kh, dg, dg);
-  bestCombSec = hybridMITM(N, Kc, dg, dg);
-  curMSec = minHybridMITM(N, Kh, dm);
-  bestMSec = minHybridMITM(N, Kc, dm);
+checkParams(genoutput, estimate=3) = {
+  my(goodNQ, hB, L, K, bCombSec, bMSec, sig, decFail, mRej);
+  [N, q, d1, d2, d3, dg, dm, lambda1, K1, lambda2, K2] = genoutput;
 
   goodNQ = if(isprime(N),
+              pAbove2 = (N-1)/znorder(Mod(2,N));
               if(isprimepower(q) && Mod(q,2) == 0,
-              if(#factormod(polcyclo(N), 2, 1)[,1] < 3, "Yes.",
-                "No. Primes above 2 have \"small\" inertia degree."),
+              if(pAbove2 < 3, "Yes.",
+                Strprintf("No. %d primes above 2.", pAbove2)),
                 "No. q is not a power of 2."),
                 "No. Composite N.");
+
+  /* Upper bound on security */
+  directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+
+  if(estimate == 3,
+    L = lambda1; K = K1,
+    L = lambda2; K = K2);
+
+  \\directLR = cn11est(2*N, sqrt(q)^(1/(2*N)))[4];
+
+  \\hMITM = hybridHermiteRequirement(N,q,L,Kc);
+  \\hLR = hybridHermiteRequirement(N,q,L,Kh);
+  hB = hybridHermiteRequirement(N,q,L,K);
+
+  \\curCombSec = hybridMITM(N, Kh, dg+1, dg);
+  \\bestCombSec = hybridMITM(N, Kc, dg+1, dg);
+
+  \\curMSec = minHybridMITM(N, Kh, dm);
+  \\bestMSec = minHybridMITM(N, Kc, dm);
+
+  bCombSec = hybridMITM(N, K, dg+1, dg);
+  bMSec = minHybridMITM(N, K, dm);
+
+  \\preMITM = cn11est(2*N - L - Kc, hMITM);
+  \\preLR = cn11est(2*N - L - Kh, hLR);
+  preB = cn11est(2*N - L - K, hB);
 
   sig = decFailSig((1-dm/N), 2/3, d1, d2, d3);
   decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
   mRej = dmRejectProb(N,dm);
 
-  preMITM = cn11est(2*N - lambda - Kc, hMITM);
-  preLR = cn11est(2*N - lambda - Kh, hLR);
-
   printf("[N, q, d1, d2, d3, dg, dm] = %s\n", [N,q,d1,d2,d3,dg,dm]);
   printf("Safe N and q? %s\n", goodNQ);
-  printf("Direct MITM cost = %d\n", L);
   printf("Decryption failure prob. = %.1f\n", decFail);
   printf("Message rejection prob. = %.1f\n\n", mRej);
-  printf("Attack characteristics.\nMITM: Assume search cost estimate is tight.\nLR: Assume lattice reduction cost estimate is tight\n\n");
-  printf("MITM K = %d : requires root Hermite factor = %.4f\n", Kc, hMITM);
-  printf("\tCN11 estimates %d rounds of BKZ-%d. Total cost = %d \n", preMITM[1], preMITM[2], preMITM[3]);
-  printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", bestCombSec, bestMSec);
-  printf("LR K = %d : requires root Hermite factor = %.4f\n", Kh, hLR);
-  printf("\tCN11 estimates %d rounds of BKZ-%d. Total cost = %d \n", preLR[1], preLR[2], preLR[3]);
-  printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", curCombSec, curMSec);
+  printf("Security Estimates\n\n");
 
-  /* Ensure lambda <= log |product form search space| */
-  \\L = round(0.5 * log2(numProdForm(N, d1, d2, d3)/N));
+  printf("Direct MITM search cost = %d\n", directMITM);
+  \\printf("Direct lattice reduction cost = %d to reach %.4f\n", directLR, sqrt(q)^(1/(2*N)));
+  \\printf("MITM K = %d : requires root Hermite factor = %.4f\n", Kc, hMITM);
+  \\printf("\tCN11 estimates %d rounds of BKZ-%d. Total cost = %d or %d\n", preMITM[1], preMITM[2], preMITM[3], preMITM[4]);
+  \\printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", bestCombSec, bestMSec);
 
-  \\hermite = hermiteRequirement(N,q,lambda,K);
-  \\combSec = hybridMITM(N, K, dg, dg);
-  \\dmSec = minHybridMITM(N, K, dm);
+  printf("Hybrid attack\n\tSearch K = %d coordinates\n\tMust reach root Hermite factor = %.4f\n", K, hB);
+  printf("\tCN11 estimates %d rounds of BKZ-%d. Total cost = %d or %d\n", preB[1], preB[2], preB[3], preB[4]);
+  printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", bCombSec, bMSec);
 
-  \\printf("PF comb, hermite, mitm-f, mitm-m, dec fail\n");
-  \\printf("need: %s\n", [lambda, deltaStar(lambda), lambda, lambda, -lambda]);
-  \\printf("have: %s\n", [L, hermite, combSec, dmSec, decFail]);
-  \\[L >= lambda, hermite < deltaStar(lambda), combSec >= lambda, dmSec >= lambda, decFail < -lambda]
+  \\printf("LR K = %d : requires root Hermite factor = %.4f\n", Kh, hLR);
+  \\printf("\tCN11 estimates %d rounds of BKZ-%d. Total cost = %d or %d\n", preLR[1], preLR[2], preLR[3], preLR[4]);
+  \\printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", curCombSec, curMSec);
 }
 
-P = [107, 113, 131, 139, 149, 163, 173, 181, 191, 199, 211, 227, 239, 251, 263, 271, 281, 293, 307, 317, 331, 347, 359, 367, 379, 389, 401]
-sec = [34, 37, 40, 43, 46, 49, 52, 55, 58, 61, 64, 67, 70, 73, 76, 79, 82, 85, 88, 91, 94, 97, 100, 103, 106, 109, 112]
+P = [107, 113, 131, 139, 149, 163, 173, 181, 191, 199, 211, 227, 239, 251, 263, 271, 281, 293, 307, 317, 331, 347, 359, 367, 379, 389, 401, 439, 593, 743]
 
