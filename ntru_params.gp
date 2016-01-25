@@ -38,7 +38,7 @@ hybridMITM(N, K, dg1, dg2) = {
                p = binomial(Nc, dg1-d1) * binomial(Nc - dg1 + d1, dg2-d2) / tot;
                -(binomial(K, d1) * binomial(K-d1, d2)) * p * log2(p)));
     awork = .5*(sum(i=0, dg1, sum(j=0, dg2, H[i+1][j+1])) - log2(N));
-    printf("HybridMITM: K: %d Work: %d\n", K, awork);
+    \\printf("HybridMITM: K: %d Work: %d\n", K, awork);
     awork;
 }
 
@@ -117,25 +117,29 @@ cn11est(dim, hreq) = {
   [iter, bs, cost];
 }
 
-genParams(N, verbose=0) = {
-  my(lambda, directMITM, dm, d1, d2, d3, dg, sig,\
-  q, q2, decFail, decFail2, Kh, Kc, Kb, LL, LM, high, low);
-
-  /* Standard choices for dg, d1, d2, and d3 */
-  dg = round(N/3);
+getDs(N) = {
+  my(d1,d2,d3);
   d1 = d2 = d3 = ceil(vecmax(real(polroots(2*x^2 + x - N/3))));
   d2 = ceil((N/3 - d1)/(2*d1));
   d3 = max(ceil((d1 + 1)/2), ceil(N/3 - 2*d1*d2));
+  [d1,d2,d3]
+}
+
+genParams(N, verbose=0) = {
+  my(lambda, directMITM, dm, d1, d2, d3, dg, sig,\
+  q, q2, decFail, decFail2, Kh, Kc, Kb, LL, LM, high, low, out);
+
+  /* Standard choices for dg, d1, d2, and d3 */
+  dg = round(N/3);
+  [d1,d2,d3] = getDs(N);
 
   /* Pick initial dm based on rejection probability below 2^-10 */
   dm = binsearchLT((x)->(dmRejectProb(N,x)), -10, 0, floor(N/3));
   mRej = dmRejectProb(N,dm);
-printf("Gen: 0\n");
 
   /* Use direct product-form MITM for upper bound on security */
   directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
 
-printf("Gen: 1\n");
   /* Choose q as smallest power of 2 admitting negligible
      decryption failure probability */
   sig = decFailSig((1-dm/N), (2*dg + 1)/N, d1, d2, d3);
@@ -143,10 +147,8 @@ printf("Gen: 1\n");
   q = 2^ceil(log2(2*q + 2));
   decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
 
-printf("Gen: 2\n");
   /* Kh is smallest K that can be prepared via lattice reduction in O(2^\lambda) time. */
   [lambda, K] = optimalK(N,q,d1,d2,d3,dg,dm);
-printf("Gen: 3\n");
 
   /* Redo search for q with new security estimate */
   /* TODO: This favors estimate 1 */
@@ -156,9 +158,7 @@ printf("Gen: 3\n");
   if(q2 != q, /* If we can lower q, rederive security */
     q = q2;
     decFail = decFail2;
-    [lambda, K] = optimalK(N,q,d1,d2,d3,dg,dm);
-    printf("Gen: %d\n", q));
-printf("Gen: 4\n");
+    [lambda, K] = optimalK(N,q,d1,d2,d3,dg,dm));
 
   /* Update security estimate. Either keep direct MITM cost or
    * choose larger of the two costs from hybrid attack (which should
@@ -168,27 +168,15 @@ printf("Gen: 4\n");
   if(verbose,
     checkParams([N, q, d1, d2, d3, dg, dm, lambda, K]));
 
-  printf("[N, q, d1, d2, d3, dg, dm, lambda, K, decFail, directMITM]\n");
-  [N, q, d1, d2, d3, dg, dm, lambda, K, decFail, directMITM]
+  out = [N, q, d1, d2, d3, dg, dm, lambda, K, decFail, directMITM];
+  printf("[N, q, d1, d2, d3, dg, dm, lambda, K, decFail, directMITM]\n%s\n", out);
+
+  out
 }
 
 optimalK(N,q,d1,d2,d3,dg,dm) = {
   my(lambda, Kb, Llr, Lmitm, high, low, diff);
   lambda = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
-
-  \\ printf("OptK: Lambda: %d\n", lambda);
-  \\ Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,lambda,x)), deltaStar(lambda), 0, N);
-  \\ Llr = cn11est(2*N - lambda - Kh, hybridHermiteRequirement(N, q, lambda, Kh))[3];
-  \\ Kh = binsearchLT((x)->(hybridHermiteRequirement(N,q,Llr,x)), deltaStar(Llr), 0, N);
-  \\ printf("OptK: Kh %d\n", Kh);
-
-  \\ /* Kc is largest K that can be searched in O(2^(\lambda)) time via meet-in-the-middle technique */
-  \\ Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda, 0, N) + 1;
-  \\ printf("OptK: Kc %d\n", Kc);
-  \\ if(Kc - Kh <= 20, /* Arbitrarily decide if Kh is too large compared to Kc to contain optimal point */
-  \\   Kc = binsearchLT((x)->(hybridMITM(N, x, dg+1, dg)), lambda/2, 0, N) + 1);
-  \\ Lmitm = floor(hybridMITM(N, Kc, dg+1, dg));
-  \\ printf("OptK: Lmitm %d\n", Lmitm);
 
   low = 0;
   high = N;
@@ -196,7 +184,6 @@ optimalK(N,q,d1,d2,d3,dg,dm) = {
   Llr = cn11est(2*N - Llr - Kb, hybridHermiteRequirement(N, q, Llr, Kb))[3];
   Lmitm = floor(hybridMITM(N, Kb, dg+1, dg));
   diff = abs(Llr - Lmitm);
-  printf("OptK: Diff %d %d\n", Llr, Lmitm);
   if(Llr < Lmitm,
      high = Kb;
      low = Kb - 2*floor(diff/2),
@@ -209,7 +196,6 @@ optimalK(N,q,d1,d2,d3,dg,dm) = {
     Llr = cn11est(2*N - Llr - Kb, hybridHermiteRequirement(N, q, Llr, Kb))[3];
     Lmitm = floor(hybridMITM(N, Kb, dg+1, dg));
     diff = abs(Llr - Lmitm);
-    printf("OptK: Diff %d %d\n", Llr, Lmitm);
     if(Llr < Lmitm,
        high = Kb;
        low = Kb - 2*floor(diff/2),
@@ -231,7 +217,7 @@ optimalK(N,q,d1,d2,d3,dg,dm) = {
 /* Extra parameters needed for reference implementation */
 
 probKUniq(N, K, M) = {
-  my(Z, T, R, S, RHS13, JT2);
+  my(Z, T, R, S, RHS14, JT2);
   Z = 1.0*(K/N);
   T = 1.0*(M/N);
 
@@ -239,12 +225,12 @@ probKUniq(N, K, M) = {
   R = solve(X=0.01,(1/Z)-(1e-9),-1/X*log(1-X*Z)-T);
   /* Equation 12 */
   S = sqrt(Z/(1-R*Z) - T);
-  /* RHS of Equation 13 */
-  RHS13 = (2*Pi*S^2)^(-1/2) * (R/(R-1)) * sqrt((1 - R*Z)/(1-Z));
+  /* RHS of Equation 14 */
+  RHS14 = (2*Pi*S^2)^(-1/2) * (R/(R-1)) * sqrt((1 - R*Z)/(1-Z));
   /* Equation 2 */
   JT2 = (T - Z)*log(R) + (1-Z)*log(1-Z) - (1-R*Z)/(R)*log(1-R*Z);
-  /* Probability from equation 13 */
-  -log2(RHS13 / (exp(N*JT2)*sqrt(N)));
+  /* Probability from equation 14 */
+  -log2(RHS14 / (exp(N*JT2)*sqrt(N)));
 }
 addhelp(probKUniq, \
 "probKUniq(N,K,M): Probability that a set of M integers uniformly " \
@@ -254,10 +240,74 @@ addhelp(probKUniq, \
 
 
 logBinomialCDF(k, n, p) = {
-  log2(sum(i=1,k,binomial(n,i)*(p)^i * (1-p)^(n-i)));
+  my(i);
+  log2(sum(i=0,k,binomial(n,i)*(p)^i * (1-p)^(n-i)));
 }
 addhelp(logBinomialCDF, \
 "logBinomialCDF(k,n,p): log2(Pr(X <= k)), X binomial with parameters n and p.")
+
+
+altOccupancy(C,N,n,L,d) = {
+  global(grid);
+  if(type(grid) != "t_VEC" || grid[1] != [C,N,n] || grid[2] < L,
+  /* Initialize storage for memoization */
+  grid = [[C,N,n],L,matrix(L+2,L+2,iL,id,if(iL < id, 0, if(id == 1, (1.0 - n*N/C)^(iL-1), -1)))]);
+
+  if(grid[3][L+1, d+1] != -1,
+    /* Reuse previously calculated entry */
+    return(grid[3][L+1,d+1]));
+
+  /* Calculate a new entry */
+  grid[3][L+1,d+1] = altOccupancy(C,N,n,L-1,d-1) * (1.0*n*(N-d+1)/C) \
+                   + altOccupancy(C,N,n,L-1,d)   * (1 - n*(N-d)/C);
+  return(grid[3][L+1,d+1]);
+}
+addhelp(altOccupancy, \
+"altOccupancy(C,N,n,L,d): probability that a list of L random numbers chosen"\
+"uniformly in [0,C) contains exactly d values in [0, nN] that are distinct"\
+"modulo N. As in Silverman and Whyte 2007.");
+
+altOccupancy2(C,N,n,L,d) = {
+  global(grid);
+  if(type(grid) != "t_VEC" || grid[1] != [C,N,n] || grid[2] < L,
+  /* Initialize storage for memoization */
+    grid = [[C,N,n], L, matrix(L+2,L+2,iL,id,
+            if(iL < id, 0,
+            if(id == 1, (1.0 - n*N/C)^(iL-1),
+                        -1)))
+           ]);
+
+  if(grid[3][L+1, d+1] != -1,
+    /* Reuse previously calculated entry */
+    return(grid[3][L+1,d+1]));
+
+  /* Calculate a new entry */
+  grid[3][L+1,d+1] = altOccupancy(C,N,n,L-1,d-1) * (1.0*n*(N-d+1)/C) \
+                   + altOccupancy(C,N,n,L-1,d)   * (1 - n*(N-d)/C);
+  return(grid[3][L+1,d+1]);
+}
+
+minIndexSamples(N, c, need, lambda) = {
+  my(i, cm, minSamp, err, minRand);
+  minSamp = binsearchLT((x)->probKUniq(N, need, x), lambda, need+1, 10*need);
+  cm = 2^c - lift(Mod(2^c, N));
+  err = 1.0 * cm/2^c;
+  minRand = binsearchLT((s)->(-logBinomialCDF(minSamp, s, err)), lambda, minSamp, floor(N*log(N)));
+
+  /* Use upper bound to initialize memoization array for exact computation */
+  altOccupancy(2^c, N, 2^c\N, minRand, need);
+  minRand = need;
+  while(-log2(sum(i=0, need-1, altOccupancy(2^c, N, 2^c\N, minRand, i))) < lambda, minRand+=1);
+
+  minRand;
+}
+
+minMGFCalls(N, hashLen, lambda) = {
+  my(n5, minMGF);
+  n5 = ceil(N/5);
+  minMGF = binsearchLT((x)->(-logBinomialCDF(n5, x, 243/256)), lambda, n5, 2*n5);
+  minMGF = ceil(minMGF/hashLen);
+}
 
 
 formatParams(genoutput) = {
@@ -268,28 +318,25 @@ formatParams(genoutput) = {
   cm = 2^c - lift(Mod(2^c, N));
 
   /* Upper bound on security */
-  lambda = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  \\lambda = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
 
-  secOct = floor(lambda/8);
+  secOct = min(32, floor(lambda/8));
   /* max message length (bytes) using 3 bit to 2 trit encoding
      assumes mLen will be < 256, assumes b is secOct bytes */
-  mLen = floor(((N-1)/2)*3/8) - secOct;
+  mLen = floor(((N-1)/2)*3/8) - min(32, 2*secOct);
   lLen = 1 + floor(log(mLen)/log(256));
   mLen -= lLen;
 
-  hashLen = 20; if(secOct > 20, hashLen = 32);
+  /* hashLen = 20; if(secOct > 20, hashLen = 32);*/
+  hashLen = 32;
 
   /* Calculate minIGFCalls */
   need = 2*(d1+d2+d3);
-  minSamp = binsearchLT((x)->probKUniq(N, need, x), lambda, need+1, 10*need);
-  err = 1.0 * cm/2^c;
-  minRand = binsearchLT((s)->(-logBinomialCDF(minSamp, s, err)), lambda, minSamp, floor(N*log(N)));
-  minCalls = ceil(ceil(minRand*c/8)/hashLen);
+  minRand = minIndexSamples(N, c, need, lambda);
+  minCalls = ceil(minRand*c/(8*hashLen));
 
   /* minMGF calls assuming 5 trits are extracted from 1 byte with probability 243/256 */
-  n5 = ceil(N/5);
-  minMGF = binsearchLT((x)->(-logBinomialCDF(n5, x, 243/256)), lambda, n5, 2*n5);
-  minMGF = ceil(minMGF/hashLen);
+  minMGF = minMGFCalls(N, hashLen, lambda);
 
 printf( \
 "    {\n"
@@ -300,6 +347,7 @@ printf( \
 "        %d,\t\t\t\t/* no. of bits in N (i.e., in an index) */\n" \
 "        %d,\t\t\t\t/* N */\n" \
 "        %d,\t\t\t\t/* security strength in octets */\n" \
+"        %d,\t\t\t\t/* no. of octets for random string b */\n"
 "        %d,\t\t\t\t/* q */\n" \
 "        %d,\t\t\t\t/* no. of bits in q (i.e., in a coeff) */\n" \
 "        TRUE,\t\t\t\t/* product form */\n" \
@@ -312,7 +360,8 @@ printf( \
 "        1,\t\t\t\t/* lLen */\n" \
 "        %d,\t\t\t\t/* min. no. of hash calls for IGF-2 */\n" \
 "        %d,\t\t\t\t/* min. no. of hash calls for MGF-TP-1 */\n" \
-"    },\n", N,N,ceil(log2(N)), N, secOct, q, ceil(log2(q)), \
+"        NTRU_CRYPTO_HASH_ALGID_SHA256,\t/* hash function for MGF-TP-1, HMAC-DRBG, etc. */\n"
+"    },\n", N,N,ceil(log2(N)), N, secOct, min(32, 2*secOct), q, ceil(log2(q)), \
 d1, d2, d3, dg, mLen, dm, cm, c, minCalls, minMGF);
 }
 
@@ -343,7 +392,7 @@ checkParams(genoutput) = {
   mRej = dmRejectProb(N,dm);
 
   printf("[N, q, d1, d2, d3, dg, dm] = %s\n", [N,q,d1,d2,d3,dg,dm]);
-  printf("Safe N and q? %s\n", goodNQ);
+  printf("Valid N and q? %s\n", goodNQ);
   printf("Decryption failure prob. = %.1f\n", decFail);
   printf("Message rejection prob. = %.1f\n\n", mRej);
   printf("Security Estimates\n\n");
