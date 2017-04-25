@@ -1,5 +1,7 @@
 read("bkzsim.gp");
 
+log2(x) = {if(x == 0, 0, log(x)/log(2))};
+
 binsearchLT(f, val, low, high) = {
   my(mp);
   if(low >= high-1, return(low));
