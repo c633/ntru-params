@@ -2,6 +2,18 @@ read("bkzsim.gp");
 
 log2(x) = {if(x == 0, 0, log(x)/log(2))};
 
+ntruNextPrime(N) = {
+  my(np, e2, ord);
+  if(N<100, np=100, np=N);
+  while(1,
+    np = nextprime(np+1);
+    e2 = Mod(2, np);
+    ord = znorder(e2);
+    if(ord == (np-1)/2 || ord == (np-1), break;);
+  );
+  return(np);
+}
+
 binsearchLT(f, val, low, high) = {
   my(mp);
   if(low >= high-1, return(low));
@@ -407,11 +419,22 @@ P = [107, 113, 131, /*139,*/ 149, 163, 173, 181, 191, 199, 211, 227, 239, 251, 2
 
 /* Algorithm 4. per ePrint 2015/708 paper */
 algo4(level=128,verbose=0) = {
-  my(j,r1,r2);
-  for(j=1,length(P), \
-    r1=genParamsInternal(level,P[j],1,verbose); \
-    r2=genParamsInternal(level,P[j],2,verbose); \
-    if(r1==0||r2==0,,printf("[N, q, d1, d2, d3, dg, dm]\n%s\n", r1);break));
+  my(P,r1,r2);
+  P = 100;
+  while(1,
+    P = ntruNextPrime(P);
+    r1=genParamsInternal(level,P,1,verbose);
+    r2=genParamsInternal(level,P,2,verbose);
+    if(r1==0||r2==0,,
+      printf("[N, q, d1, d2, d3, dg, dm]\n%s\n", r1);
+      break;
+    );
+  );
+
+  \\for(j=1,length(P), \
+  \\  r1=genParamsInternal(level,P[j],1,verbose); \
+  \\  r2=genParamsInternal(level,P[j],2,verbose); \
+  \\  if(r1==0||r2==0,,printf("[N, q, d1, d2, d3, dg, dm]\n%s\n", r1);break));
 }
 
 /* default is estimate 2 */
