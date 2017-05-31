@@ -1,6 +1,60 @@
-read("bkzsim.gp");
+\\ BKZ simulator.
+\\ usage: simulate( dimension, blocksize, target hermite factor )
+\\  simulates BKZ-blocksize on a unit volume lattice to which BKZ-20
+\\  has been applied as preprocessing.
+\\ returns ["success"/"failure", achieved hermite factor, # of rounds required ]
 
-log2(x) = {if(x == 0, 0, log(x)/log(2))};
+simdata(really=0) = {
+    \\ average log(gram schmidt norm) over 100 HKZ reduced bases of dim 50 lattices
+    [0.4809337322749968, 0.4889068929146757, 0.4629910732303647, 0.4384921120061095, 0.4198271756529734,
+    0.3940124751357192, 0.3793579556691379, 0.3552017168415738, 0.3375032857978846, 0.3229996676156046,
+    0.3103169826524305, 0.2978627511364960, 0.2828082600293407, 0.2685092222965025, 0.2470246073218571,
+    0.2345601366183950, 0.2236298423327614, 0.2026125221670087, 0.1833511717333619, 0.1635239915325074,
+    0.1460909610754462, 0.1239402813211751, 0.1033442833745716, 0.08072183355489210, 0.05747352858422083,
+    0.03615285314640355, 0.009734731674006085, -0.01314276679308946, -0.03859536413875225, -0.06166664730992491,
+    -0.08732858253410711, -0.1159733213895935, -0.1395873057069733, -0.1685959449423031, -0.2009987452911466,
+    -0.2272943479144534, -0.2548892487960738, -0.2845907037340676, -0.3130406180111631, -0.3439519155213564,
+    -0.3729166620199606, -0.4037203497626708, -0.4279121623225402, -0.4591242077605871, -0.4851668230787535,
+    -0.5069333755274962, -0.5312523582495852, -0.5480002333962808, -0.5470408985906416, -0.5201614648988958]
+}
+
+simulate(N, beta, target, abort=50) = {
+  my(r, c, ll, vs, llp, R, \
+    phi, d, f, logV);
+  if(beta < 50, return(0));
+  r = simdata(0);
+  c = vector(beta);
+  for(d=51, #c, c[d] = (1/d)*lngamma(d/2 + 1) - 1/2*log(Pi));
+
+  \\ Start with BKZ-20 preprocessing.
+  ll  = vector(N, i, (N-2*(i-1))*log(1.01263));
+  vs = vecsum(ll)/N;
+  for(i=1,N,ll[i] -= vs);
+  llp = vector(N);
+
+  R = 0;
+  while(exp(ll[1]/N) > target && R < abort,
+    phi = 1;
+    for(k=1, N-50,
+      d = min(beta,N-k+1);
+      f = min(k+beta, N);
+      logV = sum(i=1,f,ll[i]) - sum(i=1,k-1,llp[i]);
+      if(phi,
+          if(logV/d + c[d] < ll[k],
+            llp[k] = logV/d + c[d];
+            phi = 0),
+          llp[k] = logV/d + c[d]);
+      );
+    logV = vecsum(ll) - vecsum(llp[1..(N-50)]);
+    for(k=1, 50, llp[N-50+k] = logV/50 + r[k]);
+    ll = llp;
+    R += 1;
+    if(phi, return(["failure", exp(ll[1]/N), R])));
+  if(R >= abort, return(["failure", exp(ll[1]/N), R]));
+  ["success", exp(ll[1]/N), R];
+}
+
+ntru_log2(x) = {if(x == 0, 0, log(x)/log(2))};
 
 ntruNextPrime(N) = {
   my(np, e2, ord);
@@ -33,7 +87,7 @@ dmRejectProb(N,dm) = {
   for(p1s=dm, N-2*dm, \
   for(m1s=dm, N-dm-p1s, \
       a += binomial(N, p1s)*binomial(N-p1s,m1s)));
-  log2(1 - a/3^N);
+  ntru_log2(1 - a/3^N);
 }
 addhelp(dmRejectProb,\
 "dmRejectProb(N, dm): "\
@@ -42,7 +96,7 @@ addhelp(dmRejectProb,\
 
 
 hybridMITM(N, K, dg1, dg2) = {
-    my(Nc, tot, H, awork, d1, d2, d1a, d2a);
+    my(Nc, tot, H, awork, d1, d2, p);
     Nc = N-K;
     tot = (binomial(N,dg1)*binomial(N-dg1,dg2));
     H = vector(dg1+1, d1a,
@@ -50,16 +104,16 @@ hybridMITM(N, K, dg1, dg2) = {
                d1 = d1a - 1;
                d2 = d2a - 1;
                p = binomial(Nc, dg1-d1) * binomial(Nc - dg1 + d1, dg2-d2) / tot;
-               -(binomial(K, d1) * binomial(K-d1, d2)) * p * log2(p)));
-    awork = .5*(sum(i=0, dg1, sum(j=0, dg2, H[i+1][j+1])) - log2(N));
+               -(binomial(K, d1) * binomial(K-d1, d2)) * p * ntru_log2(p)));
+    awork = .5*(sum(i=0, dg1, sum(j=0, dg2, H[i+1][j+1])) - ntru_log2(N));
     \\printf("HybridMITM: K: %d Work: %d\n", K, awork);
     awork;
 }
 
 minHybridMITM(N, K, dm) = {
-    my(est,tot,t);
+    my(t, c);
     c = N-3*dm;
-    t = hybridMITM(N, K, dm, dm+c) + .5*log2(N);
+    t = hybridMITM(N, K, dm, dm+c) + .5*ntru_log2(N);
 }
 addhelp(minHybridMITM,\
 "minHybridMITM(N, K, dm): Calculate cost of performing hybrid attack on"\
@@ -67,7 +121,8 @@ addhelp(minHybridMITM,\
 
 
 hybridHermiteRequirement(N,q,L,K) = {
-  ld = (N - L)*log2(q);
+  my(ld);
+  ld = (N - L)*ntru_log2(q);
   ld /= (4*N^2 - 4*N*(K+L) + (K^2 + 2*K*L + L^2));
   ld -= 1/(2*N - (K+L));
   2^ld
@@ -96,7 +151,7 @@ addhelp(deltaStar, \
 
 
 decFailSig(pm, pg, d1,d2,d3) = {
-  sig = 3 * sqrt((4*d1*d2 + 2*d3)*pm + (4*d1*d2 + 2*d3)*pg);
+  return(3 * sqrt((4*d1*d2 + 2*d3)*pm + (4*d1*d2 + 2*d3)*pg));
 }
 addhelp(decFailSig, \
 "decFailSig(pm,pg,d1,d2,d3): returns expected standard deviation "\
@@ -109,6 +164,7 @@ numProdForm(N, a, b, c) = {
 }
 
 blockSize(N, q) = {
+  my(h);
   h = sqrt(q)^(1/(2*N));
   binsearchLT((x)->(-(simulate(2*N, x, h)[2])), -h, 60, N);
 }
@@ -119,7 +175,7 @@ bkzCost(dim, bs, iter) = {
   logNodes1 = 0.00405892*bs^2 - 0.337913*bs + 34.9018;
   \\ Quad fit to Full BKZ-2.0 paper table 4
   logNodes2 = 0.000784314*bs^2 + 0.366078*bs - 6.125;
-  [round(logNodes1 + log2(dim*iter) + 7), round(logNodes2 + log2(dim*iter) + 7)];
+  [round(logNodes1 + ntru_log2(dim*iter) + 7), round(logNodes2 + ntru_log2(dim*iter) + 7)];
 }
 
 cn11est(dim, hreq) = {
@@ -142,7 +198,7 @@ getDs(N) = {
 /* default is estimate 2 */
 genParams(N, estimate=2, verbose=0) = {
   my(lambda, directMITM, dm, d1, d2, d3, dg, sig,\
-  q, q2, decFail, decFail2, Kh, Kc, Kb, LL, LM, high, low, out);
+  q, q2, decFail, decFail2, out, mRej, K);
 
   /* Standard choices for dg, d1, d2, and d3 */
   dg = round(N/3);
@@ -153,22 +209,22 @@ genParams(N, estimate=2, verbose=0) = {
   mRej = dmRejectProb(N,dm);
 
   /* Use direct product-form MITM for upper bound on security */
-  directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  directMITM = floor(0.5 * ntru_log2(numProdForm(N,d1,d2,d3)/N));
 
   /* Choose q as smallest power of 2 admitting negligible
      decryption failure probability */
   sig = decFailSig((1-dm/N), (2*dg + 1)/N, d1, d2, d3);
-  q = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), directMITM, 2^4, 2^16);
-  q = 2^ceil(log2(2*q + 2));
-  decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
+  q = binsearchLT((x)->(-ntru_log2(N*erfc(x/(sig*sqrt(2))))), directMITM, 2^4, 2^16);
+  q = 2^ceil(ntru_log2(2*q + 2));
+  decFail = round(ntru_log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
 
   /* Kh is smallest K that can be prepared via lattice reduction in O(2^\lambda) time. */
   [lambda, K] = optimalK(N,q,d1,d2,d3,dg,dm,estimate);
 
   /* Redo search for q with new security estimate */
-  q2 = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), lambda, 2^4, 2^16);
-  q2 = 2^ceil(log2(2*q2 + 2));
-  decFail2 = round(log2(N*erfc(((q2-2)/2)/(sig*sqrt(2)))));
+  q2 = binsearchLT((x)->(-ntru_log2(N*erfc(x/(sig*sqrt(2))))), lambda, 2^4, 2^16);
+  q2 = 2^ceil(ntru_log2(2*q2 + 2));
+  decFail2 = round(ntru_log2(N*erfc(((q2-2)/2)/(sig*sqrt(2)))));
   if(q2 != q, /* If we can lower q, rederive security */
     q = q2;
     decFail = decFail2;
@@ -187,8 +243,8 @@ genParams(N, estimate=2, verbose=0) = {
 }
 
 optimalK(N,q,d1,d2,d3,dg,dm,estimate=2) = {
-  my(lambda, Kb, Llr, Lmitm, high, low, diff);
-  lambda = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  my(lambda, Kb, Llr, Lmitm, Lmsg, high, low, diff);
+  lambda = floor(0.5 * ntru_log2(numProdForm(N,d1,d2,d3)/N));
 
   low = 0;
   high = N;
@@ -242,21 +298,20 @@ probKUniq(N, K, M) = {
   /* Equation 2 */
   JT2 = (T - Z)*log(R) + (1-Z)*log(1-Z) - (1-R*Z)/(R)*log(1-R*Z);
   /* Probability from equation 14 */
-  -log2(RHS14 / (exp(N*JT2)*sqrt(N)));
+  -ntru_log2(RHS14 / (exp(N*JT2)*sqrt(N)));
 }
 addhelp(probKUniq, \
 "probKUniq(N,K,M): Probability that a set of M integers uniformly " \
-"distributed in [1,N] contains K unique values. Expressed as -log2(prob). "\
+"distributed in [1,N] contains K unique values. Expressed as -ntru_log2(prob). "\
 "Estimate from: Dupuis, Zhang, Whiting, \"Refined Large Deviation Asymptotics "\
 "for the Classical Occupancy Problem.\" 2006");
 
 
 logBinomialCDF(k, n, p) = {
-  my(i);
-  log2(sum(i=0,k,binomial(n,i)*(p)^i * (1-p)^(n-i)));
+  ntru_log2(sum(i=0,k,binomial(n,i)*(p)^i * (1-p)^(n-i)));
 }
 addhelp(logBinomialCDF, \
-"logBinomialCDF(k,n,p): log2(Pr(X <= k)), X binomial with parameters n and p.")
+"logBinomialCDF(k,n,p): ntru_log2(Pr(X <= k)), X binomial with parameters n and p.")
 
 global(grid);
 altOccupancy(C,N,n,L,d) = {
@@ -299,7 +354,7 @@ altOccupancy2(C,N,n,L,d) = {
 }
 
 minIndexSamples(N, c, need, lambda) = {
-  my(i, cm, minSamp, err, minRand);
+  my(cm, minSamp, err, minRand);
   minSamp = binsearchLT((x)->probKUniq(N, need, x), lambda, need+1, 10*need);
   cm = 2^c - lift(Mod(2^c, N));
   err = 1.0 * cm/2^c;
@@ -308,7 +363,7 @@ minIndexSamples(N, c, need, lambda) = {
   /* Use upper bound to initialize memoization array for exact computation */
   altOccupancy(2^c, N, 2^c\N, minRand, need);
   minRand = need;
-  while(-log2(sum(i=0, need-1, altOccupancy(2^c, N, 2^c\N, minRand, i))) < lambda, minRand+=1);
+  while(-ntru_log2(sum(i=0, need-1, altOccupancy(2^c, N, 2^c\N, minRand, i))) < lambda, minRand+=1);
 
   minRand;
 }
@@ -322,14 +377,15 @@ minMGFCalls(N, hashLen, lambda) = {
 
 
 formatParams(genoutput) = {
-  my(lambda, c, cs, cm, lLen, secOct, mLen, hashLen, minSamp, minRand, err);
+  my(lambda, c, cm, lLen, secOct, mLen, hashLen, minCalls, minRand, minMGF,\
+  N, q, d1, d2, d3, dg, dm, K, need);
   [N, q, d1, d2, d3, dg, dm, lambda, K] = genoutput;
-  c = ceil(log2(N));
+  c = ceil(ntru_log2(N));
   for(cs=c, 13, if(lift(Mod(2^cs, N))/N < lift(Mod(2^c, N))/N, c = cs));
   cm = 2^c - lift(Mod(2^c, N));
 
   /* Upper bound on security */
-  \\lambda = round(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  \\lambda = round(0.5 * ntru_log2(numProdForm(N,d1,d2,d3)/N));
 
   secOct = min(32, floor(lambda/8));
   /* max message length (bytes) using 3 bit to 2 trit encoding
@@ -372,12 +428,14 @@ printf( \
 "        %d,\t\t\t\t/* min. no. of hash calls for IGF-2 */\n" \
 "        %d,\t\t\t\t/* min. no. of hash calls for MGF-TP-1 */\n" \
 "        NTRU_CRYPTO_HASH_ALGID_SHA256,\t/* hash function for MGF-TP-1, HMAC-DRBG, etc. */\n"
-"    },\n", N,N,ceil(log2(N)), N, secOct, min(32, 2*secOct), q, ceil(log2(q)), \
+"    },\n", N,N,ceil(ntru_log2(N)), N, secOct, min(32, 2*secOct), q, ceil(ntru_log2(q)), \
 d1, d2, d3, dg, mLen, dm, cm, c, minCalls, minMGF);
 }
 
 checkParams(genoutput, estimate=2) = {
-  my(goodNQ, hB, L, K, bCombSec, bMSec, sig, decFail, mRej);
+  my(goodNQ, hB, K, bCombSec, bMSec, sig, decFail, mRej, \
+  N, q, d1, d2, d3, dg, dm, lambda, \
+  pAbove2, directMITM, preB);
   [N, q, d1, d2, d3, dg, dm, lambda, K] = genoutput;
 
   goodNQ = if(isprime(N),
@@ -389,7 +447,7 @@ checkParams(genoutput, estimate=2) = {
                 "No. Composite N.");
 
   /* Upper bound on security */
-  directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  directMITM = floor(0.5 * ntru_log2(numProdForm(N,d1,d2,d3)/N));
 
   hB = hybridHermiteRequirement(N,q,lambda,K);
 
@@ -399,7 +457,7 @@ checkParams(genoutput, estimate=2) = {
   preB = cn11est(2*N - lambda - K, hB);
 
   sig = decFailSig((1-dm/N), 2/3, d1, d2, d3);
-  decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
+  decFail = round(ntru_log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
   mRej = dmRejectProb(N,dm);
 
   printf("[N, q, d1, d2, d3, dg, dm] = %s\n", [N,q,d1,d2,d3,dg,dm]);
@@ -415,8 +473,6 @@ checkParams(genoutput, estimate=2) = {
   printf("\tHybrid MITM cost = %d\n\tHybrid MITM cost [msg with max m(1)] = %d\n\n", bCombSec, bMSec);
 }
 
-P = [107, 113, 131, /*139,*/ 149, 163, 173, 181, 191, 199, 211, 227, 239, 251, 263, 271, 281, 293, 307, 317, 331, 347, 359, 367, 379, 389, 401, 439, 593, 743]
-
 /* Algorithm 4. per ePrint 2015/708 paper */
 algo4(level=128,verbose=0) = {
   my(P,r1,r2);
@@ -430,17 +486,12 @@ algo4(level=128,verbose=0) = {
       break;
     );
   );
-
-  \\for(j=1,length(P), \
-  \\  r1=genParamsInternal(level,P[j],1,verbose); \
-  \\  r2=genParamsInternal(level,P[j],2,verbose); \
-  \\  if(r1==0||r2==0,,printf("[N, q, d1, d2, d3, dg, dm]\n%s\n", r1);break));
 }
 
 /* default is estimate 2 */
 genParamsInternal(level = 128, N, estimate=2, verbose=0) = {
   my(lambda, directMITM, dm, d1, d2, d3, dg, sig,\
-  q, q2, decFail, decFail2, Kh, Kc, Kb, LL, LM, high, low, out);
+  q, q2, decFail, decFail2, out, mRej, K);
 
   /* Standard choices for dg, d1, d2, and d3 */
   dg = round(N/3);
@@ -451,15 +502,15 @@ genParamsInternal(level = 128, N, estimate=2, verbose=0) = {
   mRej = dmRejectProb(N,dm);
 
   /* Use direct product-form MITM for upper bound on security */
-  directMITM = floor(0.5 * log2(numProdForm(N,d1,d2,d3)/N));
+  directMITM = floor(0.5 * ntru_log2(numProdForm(N,d1,d2,d3)/N));
   if(directMITM < level,return(0));
 
   /* Choose q as smallest power of 2 admitting negligible
      decryption failure probability */
   sig = decFailSig((1-dm/N), (2*dg + 1)/N, d1, d2, d3);
-  q = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), directMITM, 2^4, 2^16);
-  q = 2^ceil(log2(2*q + 2));
-  decFail = round(log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
+  q = binsearchLT((x)->(-ntru_log2(N*erfc(x/(sig*sqrt(2))))), directMITM, 2^4, 2^16);
+  q = 2^ceil(ntru_log2(2*q + 2));
+  decFail = round(ntru_log2(N*erfc(((q-2)/2)/(sig*sqrt(2)))));
 
   /* {Estimate security} */
   /* Kh is smallest K that can be prepared via lattice reduction in O(2^\lambda) time. */
@@ -467,9 +518,9 @@ genParamsInternal(level = 128, N, estimate=2, verbose=0) = {
   if(level > min(directMITM,lambda), return(0));
 
   /* Redo search for q with new security estimate */
-  q2 = binsearchLT((x)->(-log2(N*erfc(x/(sig*sqrt(2))))), lambda, 2^4, 2^16);
-  q2 = 2^ceil(log2(2*q2 + 2));
-  decFail2 = round(log2(N*erfc(((q2-2)/2)/(sig*sqrt(2)))));
+  q2 = binsearchLT((x)->(-ntru_log2(N*erfc(x/(sig*sqrt(2))))), lambda, 2^4, 2^16);
+  q2 = 2^ceil(ntru_log2(2*q2 + 2));
+  decFail2 = round(ntru_log2(N*erfc(((q2-2)/2)/(sig*sqrt(2)))));
   if(q2 != q, /* If we can lower q, rederive security */
     q = q2;
     decFail = decFail2;
