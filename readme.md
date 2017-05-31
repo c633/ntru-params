@@ -1,4 +1,5 @@
-### Script output
+### Usage
+- Run the GP scripts
 ```
 $ gp
 [snip]
@@ -9,7 +10,23 @@ $ gp
 ? algo4(112)
 [N, q, d1, d2, d3, dg, dm]
 [401, 2048, 8, 8, 6, 134, 102]
-time = 11min, 12,105 ms.
+time = 12min, 5,857 ms.
+```
+
+- Run the compiled code
+```
+$ gp2c-run -g ntru_params.gp
+[snip]
+? default(parisizemax,4*10^8)
+  ***   Warning: new maximum stack size = 400003072 (381.473 Mbytes).
+? #
+   timer = 1 (on)
+? algo4(112)
+  *** algo4: Warning: increasing stack size to 16000000.
+  *** algo4: Warning: increasing stack size to 32000000.
+[N, q, d1, d2, d3, dg, dm]
+[401, 2048, 8, 8, 6, 134, 102]
+time = 6min, 36,532 ms.
 ```
 
 ### Timing
@@ -17,10 +34,20 @@ time = 11min, 12,105 ms.
 
 | Security Level    | Parameter Sets | Time          |
 | :---------------: | :------------: | :-----------: |
-| 112 | [401, 2048, 8, 8, 6, 134, 102] | 11min, 12,105 ms. |
-| 128 | [439, 2048, 9, 8, 5, 146, 113] | 9min, 29,742 ms. |
+| 112 | [401, 2048, 8, 8, 6, 134, 102] | 12min, 5,857 ms. |
+| 128 | [443, 2048, 9, 8, 5, 148, 115] | 13min, 26,144 ms. |
 | 192 | - | - |
 | 256 | - | - |
+
+* C compiled code
+
+| Security Level    | Parameter Sets | Time          |
+| :---------------: | :------------: | :-----------: |
+| 112 | [401, 2048, 8, 8, 6, 134, 102] | 6min, 36,532 ms. |
+| 128 | [443, 2048, 9, 8, 5, 148, 115] | 7min, 29,363 ms. |
+| 192 | [677, 4096, 11, 10, 6, 226, 185] | 4min, 37,590 ms. |
+| 256 | - | - |
+
 
 ### Sample output
 ```
